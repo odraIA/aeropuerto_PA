@@ -21,15 +21,16 @@
     ; Grafo de la terminal
     (siguiente ?desde - ubicacion ?hasta - ubicacion) ; Se puede ir desde, hasta según el mapa
 
-    ; Vehículos
+    ; Global
     (esta-en ?m - (either maquina equipaje vagon) ?u - ubicacion)   ; la máquina m está en la ubicación u
+    
+    ; Vehículos
     (en ?v - vagon ?u - ubicacion)      ; el vagón v está suelto en la ubicación u
     (enganchado ?v - vagon ?m - (either maquina vagon)) ; el vagón v está enganchado a la máquina m
     (vagon-suelto ?v - vagon)                  ; v está suelto (no enganchado a ninguna máquina)
     (libre ?m - (either maquina vagon))
 
     ; Equipajes
-    (equipaje-en ?e - equipaje ?u - ubicacion)      ; e está en la ubicacion u
     (equipaje-en-vagon ?e - equipaje ?v - vagon)    ; e está dentro del vagón v
 
     ; Contador de capacidad del vagón (capacidad = 2)
