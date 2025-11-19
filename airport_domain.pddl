@@ -31,6 +31,8 @@
     (enganchado ?v - vagon ?m - maquina)      ; el vagón v está enganchado a la máquina m
     (vagon-libre ?v - vagon)                  ; v está suelto (no enganchado a ninguna máquina)
 
+    ; RICARDO: una máquina puede tener varios vagones enganchados, estos vagones extra se enganchan a otro vagón, no a la propia máquina (complica un poco todo)
+
     ; Equipajes
     (equipaje-en ?e - equipaje ?u - ubicacion)      ; e está en la ubicacion u
     (equipaje-en-vagon ?e - equipaje ?v - vagon)    ; e está dentro del vagón v
@@ -76,7 +78,7 @@
     )
     :effect (and
       (enganchado ?v ?m)
-      (not (vagon-libre ?v))
+      (not (vagon-libre ?v)) ; RICARDO: no se pueden usar precondiciones negativas, lo puse arriba
       (not (en-vagon ?v ?u))
     )
   )
