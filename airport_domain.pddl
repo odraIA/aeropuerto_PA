@@ -1,5 +1,3 @@
-; teresa puta
-; ricardo cabron
 ; LO QUE DIJERON EN CLASE
 ; para contar lo que debemos hacer es crear predicados que sean
 ;      n0, n1, n2, ..., nk y poner a true sólo el numero que llevamos
@@ -9,8 +7,6 @@
 ; No se puede dejar un paquete sospechoso
 ; El método para inspeccionar da igual (dejar paquete, vagón o tren entero) pero debemos dejarlo explicado
 ; ESTÁ PROHIBIDO USAR PRECONDICIONES NEGATIVAS PORQUE EL PLANIFICADOR OPTIC NO LAS SOPORTA
-
-;Header and description
 
 (define (domain aeropuerto)
     (:requirements :strips :typing)
@@ -37,19 +33,19 @@
     (equipaje-en-vagon ?e - equipaje ?v - vagon)    ; e está dentro del vagón v
 
     ; Contador de capacidad del vagón (capacidad = 2)
-    (n0 ?v - vagon)   ; 0 equipajes
-    (n1 ?v - vagon)   ; 1 equipaje
-    (n2 ?v - vagon)   ; 2 equipajes (vagón lleno)
+    (n0 ?v - vagon)
+    (n1 ?v - vagon)
+    (n2 ?v - vagon)
 
     ; Tipo de equipaje
-    (normal ?e - equipaje)       ; equipaje no sospechoso
-    (sospechoso ?e - equipaje)   ; equipaje sospechoso
+    (normal ?e - equipaje)
+    (sospechoso ?e - equipaje)
 
-    ; Marca qué ubicación es la oficina de inspección
+    ; Marcar oficina de inspección
     (es-oficina-inspeccion ?u - ubicacion)
   )
 
-  ;   Mover la máquina por el grafo
+  ; Mover la máquina por el grafo
 
   (:action mover-maquina
     :parameters (?m - maquina ?desde ?hasta - ubicacion)
@@ -63,9 +59,7 @@
     )
   )
 
-  ;   Enganchar / desenganchar vagones
-
-  ; Solo se puede enganchar/desenganchar si el vagón está vacío (n0).
+  ;   Enganchar / desenganchar vagones 
 
   (:action enganchar-vagon
     :parameters (?v - vagon ?m - (either maquina vagon) ?u - ubicacion)
@@ -180,7 +174,6 @@
   ;   Descargar equipajes sospechosos
 
   ; SOLO se pueden dejar en la oficina de inspección.
-  ; Para eso usamos el predicado es-oficina-inspeccion.
 
   (:action descargar-sospechoso-inspeccion-1-0
     :parameters (?e - equipaje ?v - vagon ?m - maquina ?u - ubicacion)
@@ -221,7 +214,6 @@
   ;   Inspeccionar Equipajes
 
   ; Una vez en la oficina de inspección, el equipaje deja de ser sospechoso
-  ; y pasa a ser normal.
 
   (:action inspeccionar-equipaje
     :parameters (?e - equipaje ?u - ubicacion)
