@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang=\"es\">
+<head>
+<meta charset=\"UTF-8\" />
+<title>Visor de planes del aeropuerto</title>
+<style>
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background: #f7f8fb;
+  color: #222;
+  margin: 0;
+  padding: 0;
+}
+header {
+  background: #243c64;
+  color: white;
+  padding: 16px 24px;
+}
+main {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  padding: 16px;
+}
+svg {
+  width: 100%;
+  height: 520px;
+  background: #fff;
+  border: 1px solid #d6d9e1;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+.node {
+  fill: #9cb3d4;
+  stroke: #243c64;
+  stroke-width: 2;
+}
+.node-label {
+  font-size: 12px;
+  fill: #1b2738;
+  font-weight: 600;
+}
+.connector {
+  stroke: #b4bfd3;
+  stroke-width: 3;
+}
+.token {
+  stroke: #243c64;
+  stroke-width: 1.5;
+}
+.token.machine { fill: #f6c344; }
+.token.vagon { fill: #71c4e8; }
+.token.equipaje { fill: #67d49a; }
+#panel {
+  background: #fff;
+  border: 1px solid #d6d9e1;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.controls button {
+  background: #243c64;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.controls button:disabled {
+  background: #a7b4c9;
+  cursor: not-allowed;
+}
+.action-log {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #e0e4ec;
+  border-radius: 6px;
+}
+.action-log ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.action-log li {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef1f6;
+}
+.action-log li.active {
+  background: #e9f2ff;
+  border-left: 4px solid #4a90e2;
+}
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-right: 6px;
+  font-weight: 700;
+}
+.badge.machine { background: #f6c34433; color: #b58100; }
+.badge.vagon { background: #71c4e833; color: #1c7395; }
+.badge.equipaje { background: #67d49a33; color: #2b8c5c; }
+.legend { display: flex; gap: 8px; align-items: center; }
+.legend span { font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Visor de soluciones PDDL — Aeropuerto</h1>
+  <p>Plan: plan_ff.soln | Problema: problem.pddl</p>
+</header>
+<main>
+  <div>
+    <svg id="map" viewBox="0 0 760 520" aria-label="Plano del aeropuerto"></svg>
+  </div>
+  <div id="panel">
+    <div class="controls">
+      <button id="back">⏮️ Atrás</button>
+      <button id="play">▶️ Reproducir</button>
+      <button id="next">⏭️ Siguiente</button>
+      <span id="status"></span>
+    </div>
+    <div class="legend">
+      <span class="badge machine">M</span><span>Máquina</span>
+      <span class="badge vagon">V</span><span>Vagón</span>
+      <span class="badge equipaje">E</span><span>Equipaje</span>
+    </div>
+    <div class="action-log" aria-label="Secuencia de acciones">
+      <ul id="log"></ul>
+    </div>
+  </div>
+</main>
+<script>
+const nodes = {
+  facturacion: { x: 220, y: 80, label: 'Zona de facturación' },
+  recogida: { x: 540, y: 80, label: 'Recogida de equipajes' },
+  inspeccion: { x: 380, y: 180, label: 'Oficina de inspección' },
+  puerta1: { x: 200, y: 420, label: 'Puerta1' },
+  puerta2: { x: 220, y: 220, label: 'Puerta2' },
+  puerta3: { x: 260, y: 320, label: 'Puerta3' },
+  puerta4: { x: 160, y: 300, label: 'Puerta4' },
+  puerta5: { x: 600, y: 420, label: 'Puerta5' },
+  puerta6: { x: 560, y: 220, label: 'Puerta6' },
+  puerta7: { x: 520, y: 320, label: 'Puerta7' },
+  puerta8: { x: 640, y: 300, label: 'Puerta8' }
+};
+
+const edges = [
+  ['facturacion','inspeccion'],['recogida','inspeccion'],['facturacion','recogida'],
+  ['facturacion','puerta2'],['recogida','puerta6'],['inspeccion','puerta1'],['inspeccion','puerta5'],
+  ['puerta2','puerta4'],['puerta4','puerta3'],['puerta3','puerta1'],
+  ['puerta6','puerta8'],['puerta8','puerta7'],['puerta7','puerta5'],
+  ['facturacion','puerta3'],['recogida','puerta7']
+];
+
+const payload = {"planFile": "plan_ff.soln", "problemFile": "problem.pddl", "objects": {"facturacion": "ubicacion", "recogida": "ubicacion", "inspeccion": "ubicacion", "puerta1": "ubicacion", "puerta2": "ubicacion", "puerta3": "ubicacion", "puerta4": "ubicacion", "puerta5": "ubicacion", "puerta6": "ubicacion", "puerta7": "ubicacion", "puerta8": "ubicacion", "m1": "maquina", "m2": "maquina", "v1": "vagon", "v2": "vagon", "v3": "vagon", "v4": "vagon", "v5": "vagon", "e1": "equipaje", "e2": "equipaje", "e3": "equipaje", "e4": "equipaje", "e5": "equipaje", "e6": "equipaje"}, "initialState": {"facturacion": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "recogida": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "inspeccion": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta1": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta2": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta3": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta4": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta5": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta6": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta7": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta8": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "m1": {"type": "maquina", "location": "recogida", "container": null, "attachedTo": null}, "m2": {"type": "maquina", "location": "recogida", "container": null, "attachedTo": null}, "v1": {"type": "vagon", "location": "puerta1", "container": null, "attachedTo": null}, "v2": {"type": "vagon", "location": "puerta1", "container": null, "attachedTo": null}, "v3": {"type": "vagon", "location": "puerta1", "container": null, "attachedTo": null}, "v4": {"type": "vagon", "location": "puerta5", "container": null, "attachedTo": null}, "v5": {"type": "vagon", "location": "puerta5", "container": null, "attachedTo": null}, "e1": {"type": "equipaje", "location": "facturacion", "container": null, "attachedTo": null}, "e2": {"type": "equipaje", "location": "facturacion", "container": null, "attachedTo": null}, "e3": {"type": "equipaje", "location": "puerta6", "container": null, "attachedTo": null}, "e4": {"type": "equipaje", "location": "puerta6", "container": null, "attachedTo": null}, "e5": {"type": "equipaje", "location": "puerta2", "container": null, "attachedTo": null}, "e6": {"type": "equipaje", "location": "puerta2", "container": null, "attachedTo": null}}, "actions": [{"index": 1, "name": "mover-maquina", "args": ["m2", "inspeccion", "puerta5"], "raw": "MOVER-MAQUINA M2 INSPECCION PUERTA5"}, {"index": 2, "name": "enganchar-vagon", "args": ["v5", "m2", "puerta5"], "raw": "ENGANCHAR-VAGON V5 M2 PUERTA5"}, {"index": 3, "name": "mover-maquina", "args": ["m2", "puerta5", "inspeccion"], "raw": "MOVER-MAQUINA M2 PUERTA5 INSPECCION"}, {"index": 4, "name": "mover-maquina", "args": ["m2", "inspeccion", "recogida"], "raw": "MOVER-MAQUINA M2 INSPECCION RECOGIDA"}, {"index": 5, "name": "mover-maquina", "args": ["m2", "recogida", "facturacion"], "raw": "MOVER-MAQUINA M2 RECOGIDA FACTURACION"}, {"index": 6, "name": "cargar-equipaje-0-1", "args": ["e1", "v5", "m2", "facturacion"], "raw": "CARGAR-EQUIPAJE-0-1 E1 V5 M2 FACTURACION"}, {"index": 7, "name": "mover-maquina", "args": ["m2", "facturacion", "puerta2"], "raw": "MOVER-MAQUINA M2 FACTURACION PUERTA2"}, {"index": 8, "name": "cargar-equipaje-1-2", "args": ["e5", "v5", "m2", "puerta2"], "raw": "CARGAR-EQUIPAJE-1-2 E5 V5 M2 PUERTA2"}, {"index": 9, "name": "mover-maquina", "args": ["m2", "puerta2", "facturacion"], "raw": "MOVER-MAQUINA M2 PUERTA2 FACTURACION"}, {"index": 10, "name": "mover-maquina", "args": ["m2", "facturacion", "recogida"], "raw": "MOVER-MAQUINA M2 FACTURACION RECOGIDA"}, {"index": 11, "name": "descargar-normal-2-1", "args": ["e5", "v5", "m2", "recogida"], "raw": "DESCARGAR-NORMAL-2-1 E5 V5 M2 RECOGIDA"}, {"index": 12, "name": "mover-maquina", "args": ["m2", "recogida", "puerta6"], "raw": "MOVER-MAQUINA M2 RECOGIDA PUERTA6"}, {"index": 13, "name": "cargar-equipaje-1-2", "args": ["e4", "v5", "m2", "puerta6"], "raw": "CARGAR-EQUIPAJE-1-2 E4 V5 M2 PUERTA6"}, {"index": 14, "name": "mover-maquina", "args": ["m2", "puerta6", "recogida"], "raw": "MOVER-MAQUINA M2 PUERTA6 RECOGIDA"}, {"index": 15, "name": "descargar-normal-2-1", "args": ["e4", "v5", "m2", "recogida"], "raw": "DESCARGAR-NORMAL-2-1 E4 V5 M2 RECOGIDA"}, {"index": 16, "name": "mover-maquina", "args": ["m2", "recogida", "facturacion"], "raw": "MOVER-MAQUINA M2 RECOGIDA FACTURACION"}, {"index": 17, "name": "mover-maquina", "args": ["m2", "facturacion", "puerta2"], "raw": "MOVER-MAQUINA M2 FACTURACION PUERTA2"}, {"index": 18, "name": "mover-maquina", "args": ["m2", "puerta2", "puerta4"], "raw": "MOVER-MAQUINA M2 PUERTA2 PUERTA4"}, {"index": 19, "name": "descargar-normal-1-0", "args": ["e1", "v5", "m2", "puerta4"], "raw": "DESCARGAR-NORMAL-1-0 E1 V5 M2 PUERTA4"}, {"index": 20, "name": "mover-maquina", "args": ["m2", "puerta4", "puerta2"], "raw": "MOVER-MAQUINA M2 PUERTA4 PUERTA2"}, {"index": 21, "name": "cargar-equipaje-0-1", "args": ["e6", "v5", "m2", "puerta2"], "raw": "CARGAR-EQUIPAJE-0-1 E6 V5 M2 PUERTA2"}, {"index": 22, "name": "mover-maquina", "args": ["m2", "puerta2", "facturacion"], "raw": "MOVER-MAQUINA M2 PUERTA2 FACTURACION"}, {"index": 23, "name": "cargar-equipaje-1-2", "args": ["e2", "v5", "m2", "facturacion"], "raw": "CARGAR-EQUIPAJE-1-2 E2 V5 M2 FACTURACION"}, {"index": 24, "name": "mover-maquina", "args": ["m2", "facturacion", "recogida"], "raw": "MOVER-MAQUINA M2 FACTURACION RECOGIDA"}, {"index": 25, "name": "mover-maquina", "args": ["m2", "recogida", "puerta6"], "raw": "MOVER-MAQUINA M2 RECOGIDA PUERTA6"}, {"index": 26, "name": "descargar-normal-2-1", "args": ["e2", "v5", "m2", "puerta6"], "raw": "DESCARGAR-NORMAL-2-1 E2 V5 M2 PUERTA6"}, {"index": 27, "name": "cargar-equipaje-1-2", "args": ["e3", "v5", "m2", "puerta6"], "raw": "CARGAR-EQUIPAJE-1-2 E3 V5 M2 PUERTA6"}, {"index": 28, "name": "mover-maquina", "args": ["m2", "puerta6", "recogida"], "raw": "MOVER-MAQUINA M2 PUERTA6 RECOGIDA"}, {"index": 29, "name": "mover-maquina", "args": ["m2", "recogida", "inspeccion"], "raw": "MOVER-MAQUINA M2 RECOGIDA INSPECCION"}, {"index": 30, "name": "descargar-sospechoso-inspeccion-2-1", "args": ["e3", "v5", "m2", "inspeccion"], "raw": "DESCARGAR-SOSPECHOSO-INSPECCION-2-1 E3 V5 M2 INSPECCION"}, {"index": 31, "name": "mover-maquina", "args": ["m2", "inspeccion", "recogida"], "raw": "MOVER-MAQUINA M2 INSPECCION RECOGIDA"}, {"index": 32, "name": "inspeccionar-equipaje", "args": ["e3", "inspeccion"], "raw": "INSPECCIONAR-EQUIPAJE E3 INSPECCION"}, {"index": 33, "name": "mover-maquina", "args": ["m2", "recogida", "inspeccion"], "raw": "MOVER-MAQUINA M2 RECOGIDA INSPECCION"}, {"index": 34, "name": "cargar-equipaje-1-2", "args": ["e3", "v5", "m2", "inspeccion"], "raw": "CARGAR-EQUIPAJE-1-2 E3 V5 M2 INSPECCION"}, {"index": 35, "name": "mover-maquina", "args": ["m2", "inspeccion", "recogida"], "raw": "MOVER-MAQUINA M2 INSPECCION RECOGIDA"}, {"index": 36, "name": "descargar-normal-2-1", "args": ["e3", "v5", "m2", "recogida"], "raw": "DESCARGAR-NORMAL-2-1 E3 V5 M2 RECOGIDA"}, {"index": 37, "name": "mover-maquina", "args": ["m2", "recogida", "puerta6"], "raw": "MOVER-MAQUINA M2 RECOGIDA PUERTA6"}, {"index": 38, "name": "cargar-equipaje-1-2", "args": ["e2", "v5", "m2", "puerta6"], "raw": "CARGAR-EQUIPAJE-1-2 E2 V5 M2 PUERTA6"}, {"index": 39, "name": "mover-maquina", "args": ["m2", "puerta6", "puerta8"], "raw": "MOVER-MAQUINA M2 PUERTA6 PUERTA8"}, {"index": 40, "name": "descargar-normal-2-1", "args": ["e2", "v5", "m2", "puerta8"], "raw": "DESCARGAR-NORMAL-2-1 E2 V5 M2 PUERTA8"}, {"index": 41, "name": "mover-maquina", "args": ["m2", "puerta8", "puerta7"], "raw": "MOVER-MAQUINA M2 PUERTA8 PUERTA7"}, {"index": 42, "name": "mover-maquina", "args": ["m2", "puerta7", "puerta5"], "raw": "MOVER-MAQUINA M2 PUERTA7 PUERTA5"}, {"index": 43, "name": "mover-maquina", "args": ["m2", "puerta5", "inspeccion"], "raw": "MOVER-MAQUINA M2 PUERTA5 INSPECCION"}, {"index": 44, "name": "descargar-sospechoso-inspeccion-1-0", "args": ["e6", "v5", "m2", "inspeccion"], "raw": "DESCARGAR-SOSPECHOSO-INSPECCION-1-0 E6 V5 M2 INSPECCION"}, {"index": 45, "name": "inspeccionar-equipaje", "args": ["e6", "inspeccion"], "raw": "INSPECCIONAR-EQUIPAJE E6 INSPECCION"}, {"index": 46, "name": "cargar-equipaje-0-1", "args": ["e6", "v5", "m2", "inspeccion"], "raw": "CARGAR-EQUIPAJE-0-1 E6 V5 M2 INSPECCION"}, {"index": 47, "name": "mover-maquina", "args": ["m2", "inspeccion", "recogida"], "raw": "MOVER-MAQUINA M2 INSPECCION RECOGIDA"}, {"index": 48, "name": "descargar-normal-1-0", "args": ["e6", "v5", "m2", "recogida"], "raw": "DESCARGAR-NORMAL-1-0 E6 V5 M2 RECOGIDA"}]};
+
+let actions = payload.actions;
+let baseState = payload.initialState;
+
+function cloneState(state){
+  return JSON.parse(JSON.stringify(state));
+}
+
+function computeState(upTo){
+  let st = cloneState(baseState);
+  for(let i=0;i<=upTo && i<actions.length;i++){
+    applyAction(st, actions[i]);
+  }
+  return st;
+}
+
+function applyAction(st, action){
+  const [type, ...rest] = [action.name, ...action.args];
+  const lower = type.toLowerCase();
+  if(lower.startsWith('mover-maquina')){
+    const [machine, , to] = rest;
+    if(st[machine]){
+      st[machine].location = to;
+      for(const obj of Object.values(st)){
+        if(obj.attachedTo === machine){
+          obj.location = to;
+        }
+      }
+    }
+  } else if(lower.startsWith('enganchar-vagon')){
+    const [vagon, target] = rest;
+    if(st[vagon]){
+      st[vagon].attachedTo = target;
+      if(st[target] && st[target].location){
+        st[vagon].location = st[target].location;
+      }
+    }
+  } else if(lower.startsWith('desenganchar-vagon')){
+    const [vagon] = rest;
+    if(st[vagon]){
+      st[vagon].attachedTo = null;
+    }
+  } else if(lower.startsWith('cargar-equipaje')){
+    const [equipaje, vagon] = rest;
+    if(st[equipaje]){
+      st[equipaje].container = vagon;
+      st[equipaje].location = null;
+    }
+  } else if(lower.startsWith('descargar')){
+    const [equipaje, , , destino] = rest;
+    if(st[equipaje]){
+      st[equipaje].container = null;
+      st[equipaje].location = destino;
+    }
+  }
+}
+
+function drawMap(svg){
+  svg.innerHTML = '';
+  edges.forEach(([a,b])=>{
+    const na = nodes[a];
+    const nb = nodes[b];
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', na.x);
+    line.setAttribute('y1', na.y);
+    line.setAttribute('x2', nb.x);
+    line.setAttribute('y2', nb.y);
+    line.setAttribute('class','connector');
+    svg.appendChild(line);
+  });
+  Object.entries(nodes).forEach(([name,info])=>{
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', info.x - 60);
+    rect.setAttribute('y', info.y - 30);
+    rect.setAttribute('width', 120);
+    rect.setAttribute('height', 60);
+    rect.setAttribute('rx', 8);
+    rect.setAttribute('class','node');
+    svg.appendChild(rect);
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+    label.setAttribute('x', info.x);
+    label.setAttribute('y', info.y);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('class','node-label');
+    label.textContent = info.label;
+    svg.appendChild(label);
+  });
+}
+
+function renderTokens(svg, state){
+  const counts = {};
+  const entries = Object.entries(state).filter(([name,obj])=> obj.type);
+  entries.forEach(([name,obj])=>{
+    let posNode = obj.location;
+    if(!posNode && obj.container){
+      const container = state[obj.container];
+      posNode = container ? container.location : null;
+    }
+    if(!posNode || !nodes[posNode]) return;
+    counts[posNode] = counts[posNode] || [];
+    counts[posNode].push([name,obj]);
+  });
+  for(const [loc, items] of Object.entries(counts)){
+    const base = nodes[loc];
+    items.forEach(([name,obj], idx)=>{
+      const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      const offsetX = (idx % 3 - 1) * 16;
+      const offsetY = Math.floor(idx/3) * 18 + 32;
+      circle.setAttribute('cx', base.x + offsetX);
+      circle.setAttribute('cy', base.y + offsetY);
+      circle.setAttribute('r', 8);
+      circle.setAttribute('class', `token ${obj.type}`);
+      svg.appendChild(circle);
+
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', base.x + offsetX);
+      t.setAttribute('y', base.y + offsetY + 4);
+      t.setAttribute('text-anchor','middle');
+      t.setAttribute('font-size','9');
+      t.textContent = name.toUpperCase();
+      svg.appendChild(t);
+    });
+  }
+}
+
+function populateLog(log){
+  actions.forEach((act)=>{
+    const li = document.createElement('li');
+    li.id = `action-${act.index}`;
+    li.textContent = `${act.index}. ${act.raw}`;
+    log.appendChild(li);
+  });
+}
+
+function update(step){
+  const svg = document.getElementById('map');
+  drawMap(svg);
+  const state = computeState(step);
+  renderTokens(svg, state);
+  document.getElementById('status').textContent = step < 0 ? 'Inicio' : `Acción ${step + 1} / ${actions.length}`;
+  document.querySelectorAll('.action-log li').forEach(li=>li.classList.remove('active'));
+  const active = document.getElementById(`action-${step}`);
+  if(active){ active.classList.add('active'); active.scrollIntoView({behavior:'smooth', block:'center'}); }
+  document.getElementById('back').disabled = step <= -1;
+  document.getElementById('next').disabled = step >= actions.length -1;
+}
+
+function init(){
+  const log = document.getElementById('log');
+  populateLog(log);
+  let step = -1;
+  let timer = null;
+  update(step);
+  const back = document.getElementById('back');
+  const next = document.getElementById('next');
+  const play = document.getElementById('play');
+
+  back.addEventListener('click', ()=>{
+    step = Math.max(-1, step-1);
+    update(step);
+  });
+  next.addEventListener('click', ()=>{
+    step = Math.min(actions.length-1, step+1);
+    update(step);
+  });
+  play.addEventListener('click', ()=>{
+    if(timer){
+      clearInterval(timer); timer = null; play.textContent='▶️ Reproducir';
+      return;
+    }
+    play.textContent = '⏸️ Pausar';
+    timer = setInterval(()=>{
+      if(step >= actions.length -1){
+        clearInterval(timer); timer=null; play.textContent='▶️ Reproducir'; return;
+      }
+      step +=1;
+      update(step);
+    }, 900);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
