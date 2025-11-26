@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang=\"es\">
+<html lang="es">
 <head>
-<meta charset=\"UTF-8\" />
-<title>Visor de planes del aeropuerto</title>
+<meta charset="UTF-8" />
+<title>Visor automático de planes del aeropuerto</title>
 <style>
 body {
   font-family: 'Segoe UI', sans-serif;
@@ -48,9 +48,10 @@ svg {
   stroke: #243c64;
   stroke-width: 1.5;
 }
-.token.machine { fill: #f6c344; }
-.token.vagon { fill: #71c4e8; }
-.token.equipaje { fill: #67d49a; }
+.token.maquina { fill: #f6c344; }
+.token.vagon   { fill: #71c4e8; }
+.token.equipaje{ fill: #67d49a; }
+
 #panel {
   background: #fff;
   border: 1px solid #d6d9e1;
@@ -60,6 +61,12 @@ svg {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 .controls button {
   background: #243c64;
@@ -73,6 +80,10 @@ svg {
   background: #a7b4c9;
   cursor: not-allowed;
 }
+select, input[type="file"] {
+  font-size: 13px;
+}
+
 .action-log {
   max-height: 360px;
   overflow-y: auto;
@@ -100,17 +111,25 @@ svg {
   margin-right: 6px;
   font-weight: 700;
 }
-.badge.machine { background: #f6c34433; color: #b58100; }
-.badge.vagon { background: #71c4e833; color: #1c7395; }
-.badge.equipaje { background: #67d49a33; color: #2b8c5c; }
+.badge.maquina { background: #f6c34433; color: #b58100; }
+.badge.vagon   { background: #71c4e833; color: #1c7395; }
+.badge.equipaje{ background: #67d49a33; color: #2b8c5c; }
 .legend { display: flex; gap: 8px; align-items: center; }
 .legend span { font-size: 12px; }
+
+.small {
+  font-size: 12px;
+  color: #555;
+}
 </style>
 </head>
 <body>
 <header>
-  <h1>Visor de soluciones PDDL — Aeropuerto</h1>
-  <p>Plan: plan_ff.soln | Problema: problem.pddl</p>
+  <h1>Visor de soluciones PDDL — Aeropuerto (automático)</h1>
+  <p class="small">
+    1) Elige la carpeta con <code>airport_domain.pddl</code>, <code>problem.pddl</code> y planes.<br>
+    2) Selecciona el plan a visualizar.
+  </p>
 </header>
 <main>
   <div>
@@ -118,13 +137,33 @@ svg {
   </div>
   <div id="panel">
     <div class="controls">
+      <label class="small">
+        Carpeta:
+        <input type="file" id="folderInput" webkitdirectory multiple />
+      </label>
+
+      <label class="small">
+        Plan:
+        <select id="planSelect" disabled>
+          <option value="">— selecciona un plan —</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="small" id="fileInfo">
+      Dominio: <span id="domainName">—</span> |
+      Problema: <span id="problemName">—</span>
+    </div>
+
+    <div class="controls">
       <button id="back">⏮️ Atrás</button>
       <button id="play">▶️ Reproducir</button>
       <button id="next">⏭️ Siguiente</button>
       <span id="status"></span>
     </div>
+
     <div class="legend">
-      <span class="badge machine">M</span><span>Máquina</span>
+      <span class="badge maquina">M</span><span>Máquina</span>
       <span class="badge vagon">V</span><span>Vagón</span>
       <span class="badge equipaje">E</span><span>Equipaje</span>
     </div>
@@ -133,21 +172,28 @@ svg {
     </div>
   </div>
 </main>
+
 <script>
+// === CONFIGURACIÓN BÁSICA ===
+// Nombres del predicado de localización en el problema
+const LOCATION_PREDICATE = 'esta-en';
+
+// Layout fijo del aeropuerto (coordenadas)
 const nodes = {
   facturacion: { x: 220, y: 80, label: 'Zona de facturación' },
-  recogida: { x: 540, y: 80, label: 'Recogida de equipajes' },
-  inspeccion: { x: 380, y: 180, label: 'Oficina de inspección' },
-  puerta1: { x: 200, y: 420, label: 'Puerta1' },
-  puerta2: { x: 220, y: 220, label: 'Puerta2' },
-  puerta3: { x: 260, y: 320, label: 'Puerta3' },
-  puerta4: { x: 160, y: 300, label: 'Puerta4' },
-  puerta5: { x: 600, y: 420, label: 'Puerta5' },
-  puerta6: { x: 560, y: 220, label: 'Puerta6' },
-  puerta7: { x: 520, y: 320, label: 'Puerta7' },
-  puerta8: { x: 640, y: 300, label: 'Puerta8' }
+  recogida:    { x: 540, y: 80, label: 'Recogida de equipajes' },
+  inspeccion:  { x: 380, y: 180, label: 'Oficina de inspección' },
+  puerta1:     { x: 200, y: 420, label: 'Puerta1' },
+  puerta2:     { x: 220, y: 220, label: 'Puerta2' },
+  puerta3:     { x: 260, y: 320, label: 'Puerta3' },
+  puerta4:     { x: 160, y: 300, label: 'Puerta4' },
+  puerta5:     { x: 600, y: 420, label: 'Puerta5' },
+  puerta6:     { x: 560, y: 220, label: 'Puerta6' },
+  puerta7:     { x: 520, y: 320, label: 'Puerta7' },
+  puerta8:     { x: 640, y: 300, label: 'Puerta8' }
 };
 
+// Enlaces lógicos entre ubicaciones
 const edges = [
   ['facturacion','inspeccion'],['recogida','inspeccion'],['facturacion','recogida'],
   ['facturacion','puerta2'],['recogida','puerta6'],['inspeccion','puerta1'],['inspeccion','puerta5'],
@@ -156,11 +202,14 @@ const edges = [
   ['facturacion','puerta3'],['recogida','puerta7']
 ];
 
-const payload = {"planFile": "plan_ff.soln", "problemFile": "problem.pddl", "objects": {"facturacion": "ubicacion", "recogida": "ubicacion", "inspeccion": "ubicacion", "puerta1": "ubicacion", "puerta2": "ubicacion", "puerta3": "ubicacion", "puerta4": "ubicacion", "puerta5": "ubicacion", "puerta6": "ubicacion", "puerta7": "ubicacion", "puerta8": "ubicacion", "m1": "maquina", "m2": "maquina", "v1": "vagon", "v2": "vagon", "v3": "vagon", "v4": "vagon", "v5": "vagon", "e1": "equipaje", "e2": "equipaje", "e3": "equipaje", "e4": "equipaje", "e5": "equipaje", "e6": "equipaje"}, "initialState": {"facturacion": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "recogida": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "inspeccion": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta1": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta2": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta3": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta4": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta5": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta6": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta7": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "puerta8": {"type": "ubicacion", "location": null, "container": null, "attachedTo": null}, "m1": {"type": "maquina", "location": "recogida", "container": null, "attachedTo": null}, "m2": {"type": "maquina", "location": "recogida", "container": null, "attachedTo": null}, "v1": {"type": "vagon", "location": "puerta1", "container": null, "attachedTo": null}, "v2": {"type": "vagon", "location": "puerta1", "container": null, "attachedTo": null}, "v3": {"type": "vagon", "location": "puerta1", "container": null, "attachedTo": null}, "v4": {"type": "vagon", "location": "puerta5", "container": null, "attachedTo": null}, "v5": {"type": "vagon", "location": "puerta5", "container": null, "attachedTo": null}, "e1": {"type": "equipaje", "location": "facturacion", "container": null, "attachedTo": null}, "e2": {"type": "equipaje", "location": "facturacion", "container": null, "attachedTo": null}, "e3": {"type": "equipaje", "location": "puerta6", "container": null, "attachedTo": null}, "e4": {"type": "equipaje", "location": "puerta6", "container": null, "attachedTo": null}, "e5": {"type": "equipaje", "location": "puerta2", "container": null, "attachedTo": null}, "e6": {"type": "equipaje", "location": "puerta2", "container": null, "attachedTo": null}}, "actions": [{"index": 1, "name": "mover-maquina", "args": ["m2", "inspeccion", "puerta5"], "raw": "MOVER-MAQUINA M2 INSPECCION PUERTA5"}, {"index": 2, "name": "enganchar-vagon", "args": ["v5", "m2", "puerta5"], "raw": "ENGANCHAR-VAGON V5 M2 PUERTA5"}, {"index": 3, "name": "mover-maquina", "args": ["m2", "puerta5", "inspeccion"], "raw": "MOVER-MAQUINA M2 PUERTA5 INSPECCION"}, {"index": 4, "name": "mover-maquina", "args": ["m2", "inspeccion", "recogida"], "raw": "MOVER-MAQUINA M2 INSPECCION RECOGIDA"}, {"index": 5, "name": "mover-maquina", "args": ["m2", "recogida", "facturacion"], "raw": "MOVER-MAQUINA M2 RECOGIDA FACTURACION"}, {"index": 6, "name": "cargar-equipaje-0-1", "args": ["e1", "v5", "m2", "facturacion"], "raw": "CARGAR-EQUIPAJE-0-1 E1 V5 M2 FACTURACION"}, {"index": 7, "name": "mover-maquina", "args": ["m2", "facturacion", "puerta2"], "raw": "MOVER-MAQUINA M2 FACTURACION PUERTA2"}, {"index": 8, "name": "cargar-equipaje-1-2", "args": ["e5", "v5", "m2", "puerta2"], "raw": "CARGAR-EQUIPAJE-1-2 E5 V5 M2 PUERTA2"}, {"index": 9, "name": "mover-maquina", "args": ["m2", "puerta2", "facturacion"], "raw": "MOVER-MAQUINA M2 PUERTA2 FACTURACION"}, {"index": 10, "name": "mover-maquina", "args": ["m2", "facturacion", "recogida"], "raw": "MOVER-MAQUINA M2 FACTURACION RECOGIDA"}, {"index": 11, "name": "descargar-normal-2-1", "args": ["e5", "v5", "m2", "recogida"], "raw": "DESCARGAR-NORMAL-2-1 E5 V5 M2 RECOGIDA"}, {"index": 12, "name": "mover-maquina", "args": ["m2", "recogida", "puerta6"], "raw": "MOVER-MAQUINA M2 RECOGIDA PUERTA6"}, {"index": 13, "name": "cargar-equipaje-1-2", "args": ["e4", "v5", "m2", "puerta6"], "raw": "CARGAR-EQUIPAJE-1-2 E4 V5 M2 PUERTA6"}, {"index": 14, "name": "mover-maquina", "args": ["m2", "puerta6", "recogida"], "raw": "MOVER-MAQUINA M2 PUERTA6 RECOGIDA"}, {"index": 15, "name": "descargar-normal-2-1", "args": ["e4", "v5", "m2", "recogida"], "raw": "DESCARGAR-NORMAL-2-1 E4 V5 M2 RECOGIDA"}, {"index": 16, "name": "mover-maquina", "args": ["m2", "recogida", "facturacion"], "raw": "MOVER-MAQUINA M2 RECOGIDA FACTURACION"}, {"index": 17, "name": "mover-maquina", "args": ["m2", "facturacion", "puerta2"], "raw": "MOVER-MAQUINA M2 FACTURACION PUERTA2"}, {"index": 18, "name": "mover-maquina", "args": ["m2", "puerta2", "puerta4"], "raw": "MOVER-MAQUINA M2 PUERTA2 PUERTA4"}, {"index": 19, "name": "descargar-normal-1-0", "args": ["e1", "v5", "m2", "puerta4"], "raw": "DESCARGAR-NORMAL-1-0 E1 V5 M2 PUERTA4"}, {"index": 20, "name": "mover-maquina", "args": ["m2", "puerta4", "puerta2"], "raw": "MOVER-MAQUINA M2 PUERTA4 PUERTA2"}, {"index": 21, "name": "cargar-equipaje-0-1", "args": ["e6", "v5", "m2", "puerta2"], "raw": "CARGAR-EQUIPAJE-0-1 E6 V5 M2 PUERTA2"}, {"index": 22, "name": "mover-maquina", "args": ["m2", "puerta2", "facturacion"], "raw": "MOVER-MAQUINA M2 PUERTA2 FACTURACION"}, {"index": 23, "name": "cargar-equipaje-1-2", "args": ["e2", "v5", "m2", "facturacion"], "raw": "CARGAR-EQUIPAJE-1-2 E2 V5 M2 FACTURACION"}, {"index": 24, "name": "mover-maquina", "args": ["m2", "facturacion", "recogida"], "raw": "MOVER-MAQUINA M2 FACTURACION RECOGIDA"}, {"index": 25, "name": "mover-maquina", "args": ["m2", "recogida", "puerta6"], "raw": "MOVER-MAQUINA M2 RECOGIDA PUERTA6"}, {"index": 26, "name": "descargar-normal-2-1", "args": ["e2", "v5", "m2", "puerta6"], "raw": "DESCARGAR-NORMAL-2-1 E2 V5 M2 PUERTA6"}, {"index": 27, "name": "cargar-equipaje-1-2", "args": ["e3", "v5", "m2", "puerta6"], "raw": "CARGAR-EQUIPAJE-1-2 E3 V5 M2 PUERTA6"}, {"index": 28, "name": "mover-maquina", "args": ["m2", "puerta6", "recogida"], "raw": "MOVER-MAQUINA M2 PUERTA6 RECOGIDA"}, {"index": 29, "name": "mover-maquina", "args": ["m2", "recogida", "inspeccion"], "raw": "MOVER-MAQUINA M2 RECOGIDA INSPECCION"}, {"index": 30, "name": "descargar-sospechoso-inspeccion-2-1", "args": ["e3", "v5", "m2", "inspeccion"], "raw": "DESCARGAR-SOSPECHOSO-INSPECCION-2-1 E3 V5 M2 INSPECCION"}, {"index": 31, "name": "mover-maquina", "args": ["m2", "inspeccion", "recogida"], "raw": "MOVER-MAQUINA M2 INSPECCION RECOGIDA"}, {"index": 32, "name": "inspeccionar-equipaje", "args": ["e3", "inspeccion"], "raw": "INSPECCIONAR-EQUIPAJE E3 INSPECCION"}, {"index": 33, "name": "mover-maquina", "args": ["m2", "recogida", "inspeccion"], "raw": "MOVER-MAQUINA M2 RECOGIDA INSPECCION"}, {"index": 34, "name": "cargar-equipaje-1-2", "args": ["e3", "v5", "m2", "inspeccion"], "raw": "CARGAR-EQUIPAJE-1-2 E3 V5 M2 INSPECCION"}, {"index": 35, "name": "mover-maquina", "args": ["m2", "inspeccion", "recogida"], "raw": "MOVER-MAQUINA M2 INSPECCION RECOGIDA"}, {"index": 36, "name": "descargar-normal-2-1", "args": ["e3", "v5", "m2", "recogida"], "raw": "DESCARGAR-NORMAL-2-1 E3 V5 M2 RECOGIDA"}, {"index": 37, "name": "mover-maquina", "args": ["m2", "recogida", "puerta6"], "raw": "MOVER-MAQUINA M2 RECOGIDA PUERTA6"}, {"index": 38, "name": "cargar-equipaje-1-2", "args": ["e2", "v5", "m2", "puerta6"], "raw": "CARGAR-EQUIPAJE-1-2 E2 V5 M2 PUERTA6"}, {"index": 39, "name": "mover-maquina", "args": ["m2", "puerta6", "puerta8"], "raw": "MOVER-MAQUINA M2 PUERTA6 PUERTA8"}, {"index": 40, "name": "descargar-normal-2-1", "args": ["e2", "v5", "m2", "puerta8"], "raw": "DESCARGAR-NORMAL-2-1 E2 V5 M2 PUERTA8"}, {"index": 41, "name": "mover-maquina", "args": ["m2", "puerta8", "puerta7"], "raw": "MOVER-MAQUINA M2 PUERTA8 PUERTA7"}, {"index": 42, "name": "mover-maquina", "args": ["m2", "puerta7", "puerta5"], "raw": "MOVER-MAQUINA M2 PUERTA7 PUERTA5"}, {"index": 43, "name": "mover-maquina", "args": ["m2", "puerta5", "inspeccion"], "raw": "MOVER-MAQUINA M2 PUERTA5 INSPECCION"}, {"index": 44, "name": "descargar-sospechoso-inspeccion-1-0", "args": ["e6", "v5", "m2", "inspeccion"], "raw": "DESCARGAR-SOSPECHOSO-INSPECCION-1-0 E6 V5 M2 INSPECCION"}, {"index": 45, "name": "inspeccionar-equipaje", "args": ["e6", "inspeccion"], "raw": "INSPECCIONAR-EQUIPAJE E6 INSPECCION"}, {"index": 46, "name": "cargar-equipaje-0-1", "args": ["e6", "v5", "m2", "inspeccion"], "raw": "CARGAR-EQUIPAJE-0-1 E6 V5 M2 INSPECCION"}, {"index": 47, "name": "mover-maquina", "args": ["m2", "inspeccion", "recogida"], "raw": "MOVER-MAQUINA M2 INSPECCION RECOGIDA"}, {"index": 48, "name": "descargar-normal-1-0", "args": ["e6", "v5", "m2", "recogida"], "raw": "DESCARGAR-NORMAL-1-0 E6 V5 M2 RECOGIDA"}]};
+// Estado global
+let allFiles = [];
+let actions = [];
+let baseState = {};
+let currentStep = -1;
+let timer = null;
 
-let actions = payload.actions;
-let baseState = payload.initialState;
-
+// === UTILIDADES BÁSICAS ===
 function cloneState(state){
   return JSON.parse(JSON.stringify(state));
 }
@@ -173,19 +222,23 @@ function computeState(upTo){
   return st;
 }
 
+// Aplica una acción al estado (igual que en tu visor original)
 function applyAction(st, action){
   const [type, ...rest] = [action.name, ...action.args];
   const lower = type.toLowerCase();
+
   if(lower.startsWith('mover-maquina')){
     const [machine, , to] = rest;
     if(st[machine]){
       st[machine].location = to;
+      // arrastrar vagones enganchados
       for(const obj of Object.values(st)){
         if(obj.attachedTo === machine){
           obj.location = to;
         }
       }
     }
+
   } else if(lower.startsWith('enganchar-vagon')){
     const [vagon, target] = rest;
     if(st[vagon]){
@@ -194,17 +247,20 @@ function applyAction(st, action){
         st[vagon].location = st[target].location;
       }
     }
+
   } else if(lower.startsWith('desenganchar-vagon')){
     const [vagon] = rest;
     if(st[vagon]){
       st[vagon].attachedTo = null;
     }
+
   } else if(lower.startsWith('cargar-equipaje')){
     const [equipaje, vagon] = rest;
     if(st[equipaje]){
       st[equipaje].container = vagon;
       st[equipaje].location = null;
     }
+
   } else if(lower.startsWith('descargar')){
     const [equipaje, , , destino] = rest;
     if(st[equipaje]){
@@ -214,11 +270,13 @@ function applyAction(st, action){
   }
 }
 
+// === DIBUJO DEL MAPA Y TOKENS ===
 function drawMap(svg){
   svg.innerHTML = '';
   edges.forEach(([a,b])=>{
     const na = nodes[a];
     const nb = nodes[b];
+    if(!na || !nb) return;
     const line = document.createElementNS('http://www.w3.org/2000/svg','line');
     line.setAttribute('x1', na.x);
     line.setAttribute('y1', na.y);
@@ -283,11 +341,13 @@ function renderTokens(svg, state){
   }
 }
 
+// === LOG DE ACCIONES ===
 function populateLog(log){
-  actions.forEach((act)=>{
+  log.innerHTML = '';
+  actions.forEach((act, idx)=>{
     const li = document.createElement('li');
-    li.id = `action-${act.index}`;
-    li.textContent = `${act.index}. ${act.raw}`;
+    li.id = `action-${idx+1}`;
+    li.textContent = `${idx+1}. ${act.raw}`;
     log.appendChild(li);
   });
 }
@@ -297,44 +357,229 @@ function update(step){
   drawMap(svg);
   const state = computeState(step);
   renderTokens(svg, state);
-  document.getElementById('status').textContent = step < 0 ? 'Inicio' : `Acción ${step + 1} / ${actions.length}`;
+
+  document.getElementById('status').textContent =
+    step < 0 ? 'Inicio' : `Acción ${step + 1} / ${actions.length}`;
+
   document.querySelectorAll('.action-log li').forEach(li=>li.classList.remove('active'));
-  const active = document.getElementById(`action-${step}`);
-  if(active){ active.classList.add('active'); active.scrollIntoView({behavior:'smooth', block:'center'}); }
+  const active = document.getElementById(`action-${step+1}`);
+  if(active){
+    active.classList.add('active');
+    active.scrollIntoView({behavior:'smooth', block:'center'});
+  }
+
   document.getElementById('back').disabled = step <= -1;
-  document.getElementById('next').disabled = step >= actions.length -1;
+  document.getElementById('next').disabled = step >= actions.length -1 || actions.length === 0;
 }
 
+// === PARSEO MUY SIMPLE DE PDDL (problem) ===
+function parseObjectsFromProblem(text){
+  const result = {};
+  const m = text.match(/\(:objects([\s\S]*?)\)/i);
+  if(!m) return result;
+
+  const content = m[1].replace(/\s+/g,' ').trim();
+  const tokens = content.split(' ');
+  let buffer = [];
+  for(let i=0;i<tokens.length;i++){
+    const tok = tokens[i];
+    if(tok === '-'){
+      const type = tokens[i+1];
+      buffer.forEach(name => {
+        if(name !== '') result[name.toLowerCase()] = type.toLowerCase();
+      });
+      buffer = [];
+      i++;
+    } else {
+      buffer.push(tok);
+    }
+  }
+  return result;
+}
+
+function initStateFromProblem(text, objects){
+  const state = {};
+
+  // Crear entradas vacías para todo
+  Object.entries(objects).forEach(([name,type])=>{
+    const entry = {
+      type: type,
+      location: null,
+      container: null,
+      attachedTo: null
+    };
+    state[name] = entry;
+  });
+
+  const m = text.match(/\(:init([\s\S]*?)\)/i);
+  if(!m) return state;
+  const content = m[1];
+
+  // Buscar (en objeto ubicacion)
+  const regex = /\((\w+)\s+([^\s\)]+)\s+([^\s\)]+)\)/g;
+  let match;
+  while((match = regex.exec(content)) !== null){
+    const pred = match[1].toLowerCase();
+    const obj  = match[2].toLowerCase();
+    const loc  = match[3].toLowerCase();
+    if(pred === LOCATION_PREDICATE && state[obj]){
+      state[obj].location = loc;
+    }
+  }
+
+  return state;
+}
+
+// === PARSEO DEL PLAN ===
+function parsePlan(text){
+  const lines = text.split('\n');
+  const acts = [];
+  for(const line of lines){
+    const clean = line.replace(/;.*$/,'').trim();
+    if(!clean) continue;
+
+    // 1) Formato con paréntesis (LPG, OPTIC...)
+    const paren = clean.match(/\(([^)]+)\)/);
+    let tokens = null;
+    if(paren){
+      tokens = paren[1].trim().split(/\s+/);
+    }
+
+    // 2) Formato tipo FF: "12: ACTION ARG1 ARG2"
+    if(!tokens){
+      const stepMatch = clean.match(/^\s*\d+\s*:\s*(.+)$/);
+      if(stepMatch){
+        tokens = stepMatch[1].trim().split(/\s+/);
+      }
+    }
+
+    if(!tokens || tokens.length === 0) continue;
+
+    const name = tokens[0].toLowerCase();
+    const args = tokens.slice(1).map(s=>s.toLowerCase());
+    acts.push({
+      index: acts.length + 1,
+      name: name,
+      args: args,
+      raw: tokens.join(' ').toUpperCase()
+    });
+  }
+  return acts;
+}
+
+// === MANEJO DE FICHEROS DEL INPUT ===
+function handleFolderSelection(ev){
+  allFiles = Array.from(ev.target.files || []);
+
+  const domainFile = allFiles.find(f => /domain.*\.pddl$/i.test(f.name));
+  const problemFile = allFiles.find(f => /problem.*\.pddl$/i.test(f.name));
+
+  const domainSpan = document.getElementById('domainName');
+  const problemSpan = document.getElementById('problemName');
+  domainSpan.textContent = domainFile ? domainFile.name : 'No encontrado';
+  problemSpan.textContent = problemFile ? problemFile.name : 'No encontrado';
+
+  const planSelect = document.getElementById('planSelect');
+  planSelect.innerHTML = '<option value="">— selecciona un plan —</option>';
+  const plans = allFiles.filter(f => /\.(soln|sol|plan|txt)$/i.test(f.name));
+  plans.forEach((f)=>{
+    const opt = document.createElement('option');
+    opt.value = f.name;
+    opt.textContent = f.name;
+    planSelect.appendChild(opt);
+  });
+  planSelect.disabled = plans.length === 0;
+
+  if(!problemFile){
+    alert('No se ha encontrado problem.pddl en la carpeta. El estado inicial se quedará vacío.');
+    baseState = {};
+    actions = [];
+    populateLog(document.getElementById('log'));
+    currentStep = -1;
+    update(currentStep);
+    return;
+  }
+
+  // Leer problema y construir baseState
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    const objects = parseObjectsFromProblem(text);
+    baseState = initStateFromProblem(text, objects);
+    currentStep = -1;
+    actions = [];
+    populateLog(document.getElementById('log'));
+    update(currentStep);
+  };
+  reader.readAsText(problemFile);
+}
+
+function handlePlanChange(ev){
+  const planName = ev.target.value;
+  if(!planName){
+    actions = [];
+    populateLog(document.getElementById('log'));
+    currentStep = -1;
+    update(currentStep);
+    return;
+  }
+  const planFile = allFiles.find(f => f.name === planName);
+  if(!planFile) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    actions = parsePlan(text);
+    populateLog(document.getElementById('log'));
+    currentStep = -1;
+    update(currentStep);
+  };
+  reader.readAsText(planFile);
+}
+
+// === INIT UI ===
 function init(){
+  const svg = document.getElementById('map');
+  drawMap(svg);
+
   const log = document.getElementById('log');
   populateLog(log);
-  let step = -1;
-  let timer = null;
-  update(step);
+  update(-1);
+
+  document.getElementById('folderInput')
+    .addEventListener('change', handleFolderSelection);
+
+  document.getElementById('planSelect')
+    .addEventListener('change', handlePlanChange);
+
   const back = document.getElementById('back');
   const next = document.getElementById('next');
   const play = document.getElementById('play');
 
   back.addEventListener('click', ()=>{
-    step = Math.max(-1, step-1);
-    update(step);
+    currentStep = Math.max(-1, currentStep-1);
+    update(currentStep);
   });
+
   next.addEventListener('click', ()=>{
-    step = Math.min(actions.length-1, step+1);
-    update(step);
+    currentStep = Math.min(actions.length-1, currentStep+1);
+    update(currentStep);
   });
+
   play.addEventListener('click', ()=>{
     if(timer){
       clearInterval(timer); timer = null; play.textContent='▶️ Reproducir';
       return;
     }
+    if(actions.length === 0) return;
     play.textContent = '⏸️ Pausar';
     timer = setInterval(()=>{
-      if(step >= actions.length -1){
-        clearInterval(timer); timer=null; play.textContent='▶️ Reproducir'; return;
+      if(currentStep >= actions.length -1){
+        clearInterval(timer); timer=null; play.textContent='▶️ Reproducir';
+        return;
       }
-      step +=1;
-      update(step);
+      currentStep +=1;
+      update(currentStep);
     }, 900);
   });
 }
